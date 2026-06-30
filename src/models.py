@@ -35,7 +35,7 @@ class FunctionDefinition(BaseModel):
         return value
 
 
-class promtItem(BaseModel):
+class PromptItem(BaseModel):
     """one user prompt from the test input file."""
     prompt: str = Field(min_length=1)
 

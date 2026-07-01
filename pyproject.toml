@@ -23,3 +23,7 @@ dev = [
     "flake8>=7.3.0",
     "mypy>=2.1.0",
 ]
+
+[tool.mypy]
+exclude = "^llm_sdk/"
+

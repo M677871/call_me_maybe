@@ -4,9 +4,9 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from llm_sdk import Small_LLM_Model
+from llm_sdk import Small_LLM_Model  # type: ignore[attr-defined]
 
 
 class LLMAdapter:
@@ -100,16 +100,17 @@ class LLMAdapter:
         for key, value in raw_vocab.items():
             key_text = str(key).strip()
 
-            # Format: {"123": "token"}
-            if key_text.isdigit():
+            # Format: {"123": "token"} - use isdecimal() instead of isdigit()
+            # to avoid matching Unicode digits like ² which can't be converted
+            if key_text.isdecimal():
                 vocabulary[int(key_text)] = str(value)
 
             # Format: {"token": 123}
             elif isinstance(value, int):
                 vocabulary[value] = str(key)
 
-            # Format: {"token": "123"}
-            elif isinstance(value, str) and value.strip().isdigit():
+            # Format: {"token": "123"} - use isdecimal()
+            elif isinstance(value, str) and value.strip().isdecimal():
                 vocabulary[int(value.strip())] = str(key)
 
         return vocabulary
@@ -121,12 +122,12 @@ class LLMAdapter:
         # Hugging Face tokenizer.json format:
         # {"model": {"vocab": {"hello": 0}}}
         if isinstance(model, dict) and isinstance(model.get("vocab"), dict):
-            return model["vocab"]
+            return cast(dict[str, Any], model["vocab"])
 
         # Some tokenizer files use:
         # {"vocab": {"hello": 0}}
         if isinstance(raw_vocab.get("vocab"), dict):
-            return raw_vocab["vocab"]
+            return cast(dict[str, Any], raw_vocab["vocab"])
 
         return raw_vocab
 

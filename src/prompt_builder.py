@@ -1,6 +1,8 @@
 """Prompt construction for the LLM."""
 from __future__ import annotations
 from src.models import FunctionDefinition
+
+
 def build_function_selection_prompt(
     user_prompt: str,
     functions: list[FunctionDefinition],
@@ -23,6 +25,8 @@ def build_function_selection_prompt(
     lines.append("")
     lines.append("Function name:")
     return "\n".join(lines)
+
+
 def build_parameter_prompt(
     user_prompt: str,
     function: FunctionDefinition,

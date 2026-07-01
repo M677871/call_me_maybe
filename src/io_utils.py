@@ -35,7 +35,8 @@ def load_model_list(path: Path, model_type: type[T]) -> list[T]:
     try:
         return [model_type.model_validate(item) for item in raw_data]
     except ValidationError as exc:
-        raise ProjectError(f"Invalid data structure in file: {path}\n{exc}") from exc
+        raise ProjectError("Invalid data structure in "
+                           f"file: {path}\n{exc}") from exc
 
 
 def load_function_definitions(path: Path) -> list[FunctionDefinition]:

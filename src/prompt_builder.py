@@ -37,7 +37,7 @@ def build_parameter_prompt(
     return "\n".join(
         [
             "You are extracting one function argument.",
-            "Return only the JSON value.",
+            "Return only the JSON value, followed by a newline.",
             "",
             f'User request: "{user_prompt}"',
             f"Function name: {function.name}",

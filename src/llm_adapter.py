@@ -14,8 +14,13 @@ class LLMAdapter:
 
     def __init__(self) -> None:
         """Initialize the small LLM model."""
-        self.model = Small_LLM_Model()
-        self.vocabulary = self._load_vocabulary()
+        try:
+            self.model = Small_LLM_Model()
+            self.vocabulary = self._load_vocabulary()
+        except Exception as exc:  # pragma: no cover - surfaced to CLI
+            raise RuntimeError(
+                f"Failed to initialize the language model: {exc}"
+            ) from exc
 
     def encode(self, text: str) -> list[int]:
         """Encode text into token ids using the public SDK method."""
@@ -38,9 +43,16 @@ class LLMAdapter:
         """
         if hasattr(self.model, "decode"):
             decoded = self.model.decode([token_id])
-            return str(decoded)
+            if decoded is not None:
+                decoded_text = str(decoded)
+                if decoded_text:
+                    return decoded_text
 
-        return self.vocabulary.get(token_id, "")
+        token_text = self.vocabulary.get(token_id)
+        if token_text is not None:
+            return token_text
+
+        return ""
 
     def get_logits(self, input_ids: list[int]) -> list[float]:
         """Get next-token logits using the public SDK method."""
@@ -100,8 +112,7 @@ class LLMAdapter:
         for key, value in raw_vocab.items():
             key_text = str(key).strip()
 
-            # Format: {"123": "token"} - use isdecimal() instead of isdigit()
-            # to avoid matching Unicode digits like ² which can't be converted
+            # Format: {"123": "token"}
             if key_text.isdecimal():
                 vocabulary[int(key_text)] = str(value)
 

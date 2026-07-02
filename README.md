@@ -6,6 +6,27 @@ This project implements a function-calling pipeline that converts natural-langua
 It reads function definitions and user prompts from `data/input/`, uses a constrained decoding loop over the provided `llm_sdk` model, and writes schema-compliant results to `data/output/function_calling_results.json`.
 
 # Instructions
+Moving the cache to sgoinfree:
+
+```bash
+mkdir -p /sgoinfre/miissa/.cache/huggingface/hub
+mkdir -p /sgoinfre/miissa/.cache/huggingface/xet
+mkdir -p /sgoinfre/miissa/.cache/uv
+
+export HF_HOME=/sgoinfre/miissa/.cache/huggingface
+export HF_HUB_CACHE=/sgoinfre/miissa/.cache/huggingface/hub
+export HF_XET_CACHE=/sgoinfre/miissa/.cache/huggingface/xet
+export UV_CACHE_DIR=/sgoinfre/miissa/.cache/uv
+export XDG_CACHE_HOME=/sgoinfre/miissa/.cache
+```
+Making sure that they are moved
+```bash
+echo $HF_HOME
+echo $HF_HUB_CACHE
+echo $HF_XET_CACHE
+echo $UV_CACHE_DIR
+echo $XDG_CACHE_HOME
+```
 
 Install dependencies with:
 

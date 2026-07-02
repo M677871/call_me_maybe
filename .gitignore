@@ -3,5 +3,5 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .venv/
+.hf_cache/
 data/output/
-planning.md

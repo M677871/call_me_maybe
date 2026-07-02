@@ -1,5 +1,7 @@
 """Main function calling pipeline."""
+
 from __future__ import annotations
+
 import json
 import re
 
@@ -11,7 +13,6 @@ from src.prompt_builder import (
     build_function_selection_prompt,
     build_parameter_prompt,
 )
-
 from src.validator import validate_result
 
 
@@ -31,8 +32,7 @@ class FunctionCallingEngine:
         """Process all prompts."""
         results: list[FunctionCallResult] = []
         for item in prompts:
-            result = self.process_one(item.prompt)
-            results.append(result)
+            results.append(self.process_one(item.prompt))
         return results
 
     def process_one(self, user_prompt: str) -> FunctionCallResult:
@@ -53,12 +53,12 @@ class FunctionCallingEngine:
             user_prompt=user_prompt,
             functions=self.functions,
         )
-        constraint = EnumConstraint(function_names)
         selected_name = self.decoder.generate(
             prompt=prompt,
-            constraint=constraint,
+            constraint=EnumConstraint(function_names),
             max_new_tokens=32,
         )
+
         for function in self.functions:
             if function.name == selected_name:
                 return function
@@ -71,6 +71,7 @@ class FunctionCallingEngine:
     ) -> dict[str, object]:
         """Use constrained decoding to extract function parameters."""
         parameters: dict[str, object] = {}
+
         for parameter_name, parameter_spec in function.parameters.items():
             prompt = build_parameter_prompt(
                 user_prompt=user_prompt,
@@ -79,6 +80,7 @@ class FunctionCallingEngine:
                 parameter_type=parameter_spec.type,
             )
             constraint = JsonValueConstraint(parameter_spec.type)
+
             try:
                 generated_value = self.decoder.generate(
                     prompt=prompt,
@@ -86,12 +88,14 @@ class FunctionCallingEngine:
                     max_new_tokens=64,
                 )
                 value = constraint.parse(generated_value)
-                if(
+
+                if (
                     parameter_spec.type == "string"
                     and isinstance(value, str)
                     and value.strip() == ""
                 ):
                     raise ValueError("empty string argument")
+
                 parameters[parameter_name] = value
             except (RuntimeError, ValueError, json.JSONDecodeError):
                 parameters[parameter_name] = self._fallback_parameter_value(
@@ -100,6 +104,7 @@ class FunctionCallingEngine:
                     parameter_name=parameter_name,
                     parameter_type=parameter_spec.type,
                 )
+
         return parameters
 
     def _fallback_parameter_value(
@@ -109,123 +114,114 @@ class FunctionCallingEngine:
         parameter_name: str,
         parameter_type: str,
     ) -> object:
-        """Extract a parameter directly from the prompt.
-
-        Used only when constrained decoding cannot complete.
-        """
-        prompt = user_prompt.strip()
-        lowered = prompt.lower()
-
+        """Return a simple schema-valid value when decoding fails."""
         if parameter_type in {"number", "integer"}:
-            numbers = self._extract_numbers(prompt)
-            if not numbers:
-                return 0
-            if (
-                "square_root" in function.name
-                or "square root" in lowered
-            ):
-                return self._coerce_number(numbers[0])
-            index = list(function.parameters).index(parameter_name)
-            if index < len(numbers):
-                return self._coerce_number(numbers[index])
-            return self._coerce_number(numbers[0])
-
+            return self._number_fallback(user_prompt, function, parameter_name)
         if parameter_type == "boolean":
-            return any(
-                keyword in lowered for keyword in ["true", "yes", "on"]
-            )
+            return self._boolean_fallback(user_prompt)
+        if parameter_type == "string":
+            return self._string_fallback(user_prompt, function, parameter_name)
+        return "unknown"
 
-        quoted = self._extract_quoted_strings(prompt)
-        if parameter_name == "name":
-            match = re.search(
-                r"\bgreet\b\s*(.+)$",
-                prompt,
-                flags=re.IGNORECASE,
-            )
-            if match:
-                return self._strip_prompt_punctuation(match.group(1))
+    def _number_fallback(
+        self,
+        user_prompt: str,
+        function: FunctionDefinition,
+        parameter_name: str,
+    ) -> int | float:
+        """Pick a number from the prompt using numeric parameter order."""
+        matches = re.findall(r"-?\d+(?:\.\d+)?", user_prompt)
+        numbers = [float(item) for item in matches]
+        if not numbers:
+            return 0.0
 
-        if parameter_name in {"s", "source_string"} and quoted:
-            if parameter_name == "source_string" and len(quoted) > 1:
-                return quoted[-1]
-            return quoted[0]
+        names = [
+            name
+            for name, spec in function.parameters.items()
+            if spec.type in {"number", "integer"}
+        ]
+        index = names.index(parameter_name)
+        value = numbers[index] if index < len(numbers) else numbers[0]
+        return int(value) if value.is_integer() else value
 
-        if parameter_name == "regex":
-            literal = self._extract_replacement_target(prompt)
-            if literal is not None:
-                return re.escape(literal)
-            if "numbers" in lowered:
-                return r"\d+"
-            if "vowels" in lowered:
-                return r"[aeiouAEIOU]"
-            if "letters" in lowered:
-                return r"[A-Za-z]"
-            if "spaces" in lowered or "whitespace" in lowered:
-                return r"\s+"
+    def _boolean_fallback(self, user_prompt: str) -> bool:
+        """Pick a boolean from common words in the prompt."""
+        lowered = user_prompt.lower()
+        if any(word in lowered for word in ["false", "no", "off"]):
+            return False
+        return any(word in lowered for word in ["true", "yes", "on"])
 
-        if parameter_name == "replacement":
-            replacement = self._extract_replacement_value(prompt)
-            if replacement is not None:
+    def _string_fallback(
+        self,
+        user_prompt: str,
+        function: FunctionDefinition,
+        parameter_name: str,
+    ) -> str:
+        """Pick a string from quotes, parameter meaning, or final word."""
+        quoted = self._quoted_strings(user_prompt)
+        lowered_name = parameter_name.lower()
+
+        if "regex" in lowered_name or "pattern" in lowered_name:
+            return self._regex_fallback(user_prompt, quoted)
+        if "replacement" in lowered_name:
+            replacement = self._after_with(user_prompt)
+            if replacement:
                 return replacement
+        if "source" in lowered_name and quoted:
+            return quoted[-1] if len(quoted) > 1 else quoted[0]
+
+        names = [
+            name
+            for name, spec in function.parameters.items()
+            if spec.type == "string"
+        ]
+        index = names.index(parameter_name)
+        if index < len(quoted):
+            return quoted[index]
+        if quoted:
+            return quoted[0]
+        return self._last_word(user_prompt)
+
+    def _regex_fallback(self, user_prompt: str, quoted: list[str]) -> str:
+        lowered = user_prompt.lower()
+
+        if "number" in lowered or "digit" in lowered:
+            return r"\d+"
+        if "vowel" in lowered:
+            return r"[aeiouAEIOU]"
+        if "letter" in lowered:
+            return r"[A-Za-z]"
+        if "space" in lowered or "whitespace" in lowered:
+            return r"\s+"
 
         if quoted:
-            if parameter_name == "replacement" and len(quoted) > 1:
-                return quoted[1]
-            return quoted[0]
+            text = quoted[0]
+            if re.search(r"[.^$*+?{}\\[\\]|()]", text):
+                return re.escape(text)
+            return text
 
-        return "" if parameter_type == "string" else 0
+        return r".*"
 
-    def _extract_numbers(self, user_prompt: str) -> list[float]:
-        """Return numbers found in the prompt in appearance order."""
-        matches = re.findall(r"-?\d+(?:\.\d+)?", user_prompt)
-        return [float(match) for match in matches]
+    def _quoted_strings(self, user_prompt: str) -> list[str]:
+        """Return text found inside single or double quotes."""
+        matches = re.findall(r'"([^"]*)"|\'([^\']*)\'', user_prompt)
+        return [double or single for double, single in matches]
 
-    def _coerce_number(self, value: float) -> float | int:
-        """Return an integer when the numeric value has no fractional part."""
-        if value.is_integer():
-            return int(value)
-        return value
-
-    def _extract_quoted_strings(self, user_prompt: str) -> list[str]:
-        """Collect quoted substrings from the prompt."""
-        quoted = re.findall(r'"([^"]*)"|\'([^\']*)\'', user_prompt)
-        values: list[str] = []
-        for double_quoted, single_quoted in quoted:
-            value = double_quoted or single_quoted
-            if value:
-                values.append(value)
-        return values
-
-    def _extract_replacement_target(self, user_prompt: str) -> str | None:
-        """Find the literal text targeted by a replacement prompt."""
-        match = re.search(
-            r"(?:replace|substitute)(?: all)?(?: the)?"
-            r"(?: word| phrase)?\s+['\"]([^'\"]+)['\"]",
-            user_prompt,
-            flags=re.IGNORECASE,
-        )
+    def _after_with(self, user_prompt: str) -> str:
+        match = re.search(r"\bwith\s+['\"]([^'\"]+)['\"]", user_prompt, flags=re.IGNORECASE)
         if match:
             return match.group(1)
-        return None
 
-    def _extract_replacement_value(self, user_prompt: str) -> str | None:
-        """Extract the text that follows a 'with' clause."""
-        match = re.search(
-            r"\bwith\s+['\"]([^'\"]+)['\"]",
-            user_prompt,
-            flags=re.IGNORECASE,
-        )
+        match = re.search(r"\bwith\s+(.+)$", user_prompt, flags=re.IGNORECASE)
         if match:
-            return match.group(1)
-        match = re.search(
-            r"\bwith\s+([A-Za-z0-9_\-]+)",
-            user_prompt,
-            flags=re.IGNORECASE,
-        )
-        if match:
-            return match.group(1)
-        return None
+            return self._clean_text(match.group(1))
 
-    def _strip_prompt_punctuation(self, value: str) -> str:
-        """Remove wrapping punctuation from extracted prompt text."""
+        return ""
+
+    def _last_word(self, user_prompt: str) -> str:
+        words = re.findall(r"[A-Za-z0-9_\-]+", user_prompt)
+        return words[-1] if words else "unknown"
+
+    def _clean_text(self, value: str) -> str:
+        """Remove wrapping quotes and punctuation."""
         return value.strip().strip('"').strip("'").strip().rstrip("?.!,")

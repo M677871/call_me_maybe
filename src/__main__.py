@@ -1,8 +1,11 @@
-"""Command-line entry point."""
+"""Command-line entry point for the project."""
+
 from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
+
 from src.function_caller import FunctionCallingEngine
 from src.io_utils import (
     ProjectError,
@@ -10,7 +13,6 @@ from src.io_utils import (
     load_prompt_items,
     write_results,
 )
-
 
 DEFAULT_FUNCTIONS_PATH = Path("data/input/functions_definition.json")
 DEFAULT_INPUT_PATH = Path("data/input/function_calling_tests.json")
@@ -20,31 +22,31 @@ DEFAULT_OUTPUT_PATH = Path("data/output/function_calling_results.json")
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Convert prompts into function calls."
+        description="Convert natural language prompts into function calls."
     )
     parser.add_argument(
         "--functions_definition",
         type=Path,
         default=DEFAULT_FUNCTIONS_PATH,
-        help="Path to functions_definition.json",
+        help="Path to the functions definition JSON file.",
     )
     parser.add_argument(
         "--input",
         type=Path,
         default=DEFAULT_INPUT_PATH,
-        help="Path to function_calling_tests.json",
+        help="Path to the prompt input JSON file.",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT_PATH,
-        help="Path to output JSON file",
+        help="Path where the output JSON file will be written.",
     )
     return parser.parse_args()
 
 
 def main() -> int:
-    """Run the project."""
+    """Run the function-calling pipeline."""
     args = parse_args()
     try:
         functions = load_function_definitions(args.functions_definition)

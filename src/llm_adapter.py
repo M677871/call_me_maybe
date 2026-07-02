@@ -1,4 +1,5 @@
-"""Safe adapter around the public llm_sdk API."""
+"""Small public wrapper around the provided llm_sdk package."""
+
 from __future__ import annotations
 
 import base64
@@ -10,172 +11,118 @@ from llm_sdk import Small_LLM_Model  # type: ignore[attr-defined]
 
 
 class LLMAdapter:
-    """Wrapper around the provided Small_LLM_Model."""
+    """Use only the public methods exposed by Small_LLM_Model."""
 
     def __init__(self) -> None:
-        """Initialize the small LLM model."""
+        """Load the language model and its vocabulary."""
         try:
             self.model = Small_LLM_Model()
             self.vocabulary = self._load_vocabulary()
-        except Exception as exc:  # pragma: no cover - surfaced to CLI
+            self._token_ids = sorted(self.vocabulary.keys())
+            self._decoded_tokens: dict[int, str] = {}
+        except Exception as exc:  # pragma: no cover - environment dependent
             raise RuntimeError(
                 f"Failed to initialize the language model: {exc}"
             ) from exc
 
     def encode(self, text: str) -> list[int]:
-        """Encode text into token ids using the public SDK method."""
+        """Encode text into token ids."""
         encoded = self.model.encode(text)
-
         if hasattr(encoded, "tolist"):
-            ids = encoded.tolist()
+            raw_ids = encoded.tolist()
         else:
-            ids = list(encoded)
-
-        if ids and isinstance(ids[0], list):
-            ids = ids[0]
-
-        return [int(token_id) for token_id in ids]
+            raw_ids = list(encoded)
+        if raw_ids and isinstance(raw_ids[0], list):
+            raw_ids = raw_ids[0]
+        return [int(token_id) for token_id in raw_ids]
 
     def decode_token(self, token_id: int) -> str:
-        """Decode one token using public decode if available.
-
-        Fall back to vocabulary when decode is unavailable.
-        """
-        if hasattr(self.model, "decode"):
+        """Decode one token id into text."""
+        if token_id in self._decoded_tokens:
+            return self._decoded_tokens[token_id]
+        text = self.vocabulary.get(token_id, "")
+        if text == "" and hasattr(self.model, "decode"):
             decoded = self.model.decode([token_id])
             if decoded is not None:
-                decoded_text = str(decoded)
-                if decoded_text:
-                    return decoded_text
-
-        token_text = self.vocabulary.get(token_id)
-        if token_text is not None:
-            return token_text
-
-        return ""
+                text = str(decoded)
+        self._decoded_tokens[token_id] = text
+        return text
 
     def get_logits(self, input_ids: list[int]) -> list[float]:
-        """Get next-token logits using the public SDK method."""
+        """Return next-token logits for the given input ids."""
         logits = self.model.get_logits_from_input_ids(input_ids)
-
         if hasattr(logits, "tolist"):
             logits = logits.tolist()
-
         return [float(value) for value in logits]
 
     def vocab_token_ids(self) -> list[int]:
-        """Return all known token ids."""
-        return list(self.vocabulary.keys())
+        """Return all token ids known by the vocabulary."""
+        return self._token_ids
 
     def _load_vocabulary(self) -> dict[int, str]:
-        """Load token vocabulary from the public SDK vocabulary path.
-
-        Supported vocabulary formats:
-        1. {"0": "hello"}                     -> id to token
-        2. {"hello": 0}                       -> token to id
-        3. {"model": {"vocab": {"hello": 0}}} -> Hugging Face tokenizer.json
-        4. tiktoken lines: base64_token token_id
-        """
+        """Load vocabulary through the public SDK vocabulary path."""
         vocab_path = Path(self.model.get_path_to_vocab_file())
-
         vocabulary = self._load_json_vocabulary(vocab_path)
         if vocabulary:
             return vocabulary
-
         vocabulary = self._load_tiktoken_vocabulary(vocab_path)
         if vocabulary:
             return vocabulary
+        raise ValueError(f"Unsupported vocabulary format: {vocab_path}")
 
-        raise ValueError(
-            "Vocabulary file did not contain any valid token ids. "
-            f"Path: {vocab_path}"
-        )
-
-    def _load_json_vocabulary(self, vocab_path: Path) -> dict[int, str]:
-        """Try to load JSON vocabulary formats."""
+    def _load_json_vocabulary(self, path: Path) -> dict[int, str]:
+        """Load common JSON vocabulary formats."""
         try:
-            with vocab_path.open("r", encoding="utf-8") as file:
-                raw_vocab: Any = json.load(file)
+            with path.open("r", encoding="utf-8") as file:
+                raw_data: Any = json.load(file)
         except json.JSONDecodeError:
             return {}
-
-        if not isinstance(raw_vocab, dict):
+        if not isinstance(raw_data, dict):
             return {}
 
-        raw_vocab = self._extract_vocab_dict(raw_vocab)
-
-        if not isinstance(raw_vocab, dict):
-            return {}
-
+        raw_vocab = self._extract_vocab(raw_data)
         vocabulary: dict[int, str] = {}
-
         for key, value in raw_vocab.items():
             key_text = str(key).strip()
-
-            # Format: {"123": "token"}
             if key_text.isdecimal():
                 vocabulary[int(key_text)] = str(value)
-
-            # Format: {"token": 123}
             elif isinstance(value, int):
                 vocabulary[value] = str(key)
-
-            # Format: {"token": "123"} - use isdecimal()
             elif isinstance(value, str) and value.strip().isdecimal():
                 vocabulary[int(value.strip())] = str(key)
-
         return vocabulary
 
-    def _extract_vocab_dict(self, raw_vocab: dict[str, Any]) -> dict[str, Any]:
-        """Extract the actual vocab dict from wrapped tokenizer JSON."""
-        model = raw_vocab.get("model")
+    def _extract_vocab(self, raw_data: dict[str, Any]) -> dict[str, Any]:
+        """Extract the real vocabulary object from wrapped tokenizer JSON."""
+        model_data = raw_data.get("model")
+        if isinstance(model_data, dict):
+            vocab = model_data.get("vocab")
+            if isinstance(vocab, dict):
+                return cast(dict[str, Any], vocab)
+        vocab = raw_data.get("vocab")
+        if isinstance(vocab, dict):
+            return cast(dict[str, Any], vocab)
+        return raw_data
 
-        # Hugging Face tokenizer.json format:
-        # {"model": {"vocab": {"hello": 0}}}
-        if isinstance(model, dict) and isinstance(model.get("vocab"), dict):
-            return cast(dict[str, Any], model["vocab"])
-
-        # Some tokenizer files use:
-        # {"vocab": {"hello": 0}}
-        if isinstance(raw_vocab.get("vocab"), dict):
-            return cast(dict[str, Any], raw_vocab["vocab"])
-
-        return raw_vocab
-
-    def _load_tiktoken_vocabulary(self, vocab_path: Path) -> dict[int, str]:
-        """Try to load tiktoken format: base64_token token_id per line.
-
-        Example line:
-            IQ== 0
-
-        Meaning:
-            base64 token -> token id
-        """
+    def _load_tiktoken_vocabulary(self, path: Path) -> dict[int, str]:
+        """Load tiktoken format: base64 token then token id per line."""
         vocabulary: dict[int, str] = {}
-
-        with vocab_path.open("r", encoding="utf-8") as file:
+        with path.open("r", encoding="utf-8") as file:
             for line in file:
                 parts = line.strip().split()
-
                 if len(parts) != 2:
                     continue
-
-                encoded_token, token_id_text = parts
-
+                token_text, token_id_text = parts
                 if not token_id_text.isdigit():
                     continue
-
                 token_id = int(token_id_text)
-                token = self._decode_base64_token(encoded_token)
-
-                vocabulary[token_id] = token
-
+                vocabulary[token_id] = self._decode_base64(token_text)
         return vocabulary
 
-    def _decode_base64_token(self, encoded_token: str) -> str:
-        """Decode a base64 token safely."""
+    def _decode_base64(self, text: str) -> str:
+        """Decode one base64 vocabulary token."""
         try:
-            token_bytes = base64.b64decode(encoded_token)
-            return token_bytes.decode("utf-8", errors="replace")
+            raw_bytes = base64.b64decode(text)
+            return raw_bytes.decode("utf-8", errors="replace")
         except Exception:
-            return encoded_token
+            return text

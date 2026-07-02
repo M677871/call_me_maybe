@@ -1,6 +1,9 @@
-"""Validation for generated function calls."""
+"""Validation helpers for generated function calls."""
+
 from __future__ import annotations
+
 from typing import Any
+
 from src.io_utils import ProjectError
 from src.models import FunctionCallResult, FunctionDefinition
 
@@ -9,38 +12,57 @@ def validate_result(
     result: FunctionCallResult,
     functions: list[FunctionDefinition],
 ) -> FunctionCallResult:
-    """Validate output against function definitions."""
-    function_map = {function.name: function for function in functions}
-    if result.name not in function_map:
-        raise ProjectError(f"Unknown function generated: {result.name}")
-    function = function_map[result.name]
-    expected_parameters = function.parameters
+    """Validate one output object against the function definitions."""
+    function = _find_function(result.name, functions)
+    expected_keys = set(function.parameters.keys())
     actual_keys = set(result.parameters.keys())
-    expected_keys = set(expected_parameters.keys())
     if actual_keys != expected_keys:
         raise ProjectError(
             f"Wrong parameters for {result.name}. "
             f"Expected {expected_keys}, got {actual_keys}."
         )
-    for parameter_name, parameter_spec in expected_parameters.items():
-        value = result.parameters[parameter_name]
-        _validate_parameter_type(parameter_name, value, parameter_spec.type)
+
+    for name, spec in function.parameters.items():
+        value = result.parameters[name]
+        if not matches_type(value, spec.type):
+            raise ProjectError(
+                f"Parameter {name} must be {spec.type} for {result.name}."
+            )
     return result
 
 
-def _validate_parameter_type(
-    parameter_name: str,
-    value: Any,
-    expected_type: str,
-) -> None:
-    """Validate one parameter value type."""
-    if expected_type == "string" and not isinstance(value, str):
-        raise ProjectError(f"Parameter {parameter_name} must be string.")
-    if expected_type == "boolean" and not isinstance(value, bool):
-        raise ProjectError(f"Parameter {parameter_name} must be boolean.")
+def matches_type(value: Any, expected_type: str) -> bool:
+    """Return True when value matches a supported JSON schema type."""
+    if expected_type == "string":
+        return isinstance(value, str)
+    if expected_type == "boolean":
+        return isinstance(value, bool)
     if expected_type == "integer":
-        if not isinstance(value, int) or isinstance(value, bool):
-            raise ProjectError(f"Parameter {parameter_name} must be integer.")
+        return isinstance(value, int) and not isinstance(value, bool)
     if expected_type == "number":
-        if not isinstance(value, int | float) or isinstance(value, bool):
-            raise ProjectError(f"Parameter {parameter_name} must be number.")
+        return isinstance(value, int | float) and not isinstance(value, bool)
+    return False
+
+
+def schema_default(expected_type: str) -> object:
+    """Return a generic safe default based only on the schema type."""
+    if expected_type == "string":
+        return ""
+    if expected_type == "boolean":
+        return False
+    if expected_type == "integer":
+        return 0
+    if expected_type == "number":
+        return 0.0
+    return ""
+
+
+def _find_function(
+    function_name: str,
+    functions: list[FunctionDefinition],
+) -> FunctionDefinition:
+    """Find a function definition by name."""
+    for function in functions:
+        if function.name == function_name:
+            return function
+    raise ProjectError(f"Unknown function generated: {function_name}")

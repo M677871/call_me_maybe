@@ -1,7 +1,7 @@
 [project]
 name = "callmemaybe"
 version = "0.1.0"
-description = "Add your description here"
+description = "Function calling with constrained decoding"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,9 +11,7 @@ dependencies = [
 ]
 
 [tool.uv.workspace]
-members = [
-    "llm_sdk",
-]
+members = ["llm_sdk"]
 
 [tool.uv.sources]
 llm-sdk = { workspace = true, editable = true }
@@ -26,4 +24,3 @@ dev = [
 
 [tool.mypy]
 exclude = "^llm_sdk/"
-

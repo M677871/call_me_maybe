@@ -85,7 +85,14 @@ class FunctionCallingEngine:
                     constraint=constraint,
                     max_new_tokens=64,
                 )
-                parameters[parameter_name] = constraint.parse(generated_value)
+                value = constraint.parse(generated_value)
+                if(
+                    parameter_spec.type == "string"
+                    and isinstance(value, str)
+                    and value.strip() == ""
+                ):
+                    raise ValueError("empty string argument")
+                parameters[parameter_name] = value
             except (RuntimeError, ValueError, json.JSONDecodeError):
                 parameters[parameter_name] = self._fallback_parameter_value(
                     user_prompt=user_prompt,

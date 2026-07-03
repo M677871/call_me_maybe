@@ -8,7 +8,9 @@ import heapq
 from src.constraints import Constraint
 from src.llm_adapter import LLMAdapter
 
-TOP_K = 64
+TOP_K = 256
+
+
 class ConstrainedDecoder:
     """Generate text while every new token keeps the output valid."""
 
@@ -41,7 +43,7 @@ class ConstrainedDecoder:
                 if constraint.is_complete(generated):
                     return generated
                 continue
-            
+
             generated_ids.append(token_id)
             generated += token
 

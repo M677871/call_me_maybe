@@ -16,9 +16,10 @@ class LLMAdapter:
     def __init__(self) -> None:
         """Load the language model and its vocabulary."""
         try:
-            self.model = Small_LLM_Model()
+            self.model = Small_LLM_Model(trust_remote_code=False)
             self.vocabulary = self._load_vocabulary()
             self._token_ids = sorted(self.vocabulary.keys())
+            self._logits_size: int | None = None
             self._decoded_tokens: dict[int, str] = {}
         except Exception as exc:  # pragma: no cover - environment dependent
             raise RuntimeError(
@@ -41,7 +42,7 @@ class LLMAdapter:
         if token_id in self._decoded_tokens:
             return self._decoded_tokens[token_id]
         text = self.vocabulary.get(token_id, "")
-        if text == "" and hasattr(self.model, "decode"):
+        if hasattr(self.model, "decode"):
             decoded = self.model.decode([token_id])
             if decoded is not None:
                 text = str(decoded)
@@ -53,7 +54,11 @@ class LLMAdapter:
         logits = self.model.get_logits_from_input_ids(input_ids)
         if hasattr(logits, "tolist"):
             logits = logits.tolist()
-        return [float(value) for value in logits]
+        values = [float(value) for value in logits]
+        if self._logits_size != len(values):
+            self._logits_size = len(values)
+            self._token_ids = list(range(self._logits_size))
+        return values
 
     def vocab_token_ids(self) -> list[int]:
         """Return all token ids known by the vocabulary."""

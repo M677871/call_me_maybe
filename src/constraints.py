@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from abc import ABC, abstractmethod
 from json import JSONDecoder
 from typing import Any
@@ -189,6 +190,7 @@ class ArgumentsConstraint(Constraint):
             return (
                 isinstance(value, int | float)
                 and not isinstance(value, bool)
+                and math.isfinite(float(value))
             )
         return False
 

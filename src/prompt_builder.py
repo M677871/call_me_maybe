@@ -50,6 +50,8 @@ def build_arguments_prompt(
         "Do not include the function name.",
         "Do not include markdown or explanation.",
         "Use values from the user request.",
+        "Use each parameter name as a semantic hint for its role.",
+        "Do not copy one extracted value into unrelated parameters.",
         "Do not calculate the final function result.",
         "",
         f"User request: {user_prompt}",

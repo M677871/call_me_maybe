@@ -1,9 +1,3 @@
-export HF_HOME := /sgoinfre/$(USER)/.cache/huggingface
-export HF_HUB_CACHE := /sgoinfre/$(USER)/.cache/huggingface/hub
-export HF_XET_CACHE := /sgoinfre/$(USER)/.cache/huggingface/xet
-export UV_CACHE_DIR := /sgoinfre/$(USER)/.cache/uv
-export XDG_CACHE_HOME := /sgoinfre/$(USER)/.cache
-
 .PHONY: install run debug clean lint lint-strict
 
 install:

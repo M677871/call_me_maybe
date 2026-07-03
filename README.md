@@ -65,9 +65,9 @@ The pipeline follows the function-calling flow described in the subject:
 1. Load function definitions and user prompts from JSON files.
 2. Build a selection prompt that asks the LLM to choose one allowed function name.
 3. Use constrained decoding to keep only tokens that preserve a valid function name.
-4. For each required argument, build a dedicated extraction prompt.
-5. Use a JSON value constraint to force the model output to remain a valid prefix of the expected type.
-6. Parse the generated value and validate it against the function schema before writing the final JSON file.
+4. Build an argument extraction prompt for the selected function.
+5. Use an argument-object constraint to force the model output to remain a valid prefix of the expected schema.
+6. Parse the generated object and validate it against the function schema before writing the final JSON file.
 
 This design avoids relying on free-form model output. The decoder checks token candidates against the current constraint at every step, which keeps the output structurally valid.
 

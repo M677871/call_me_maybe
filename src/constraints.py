@@ -166,6 +166,8 @@ class ArgumentsConstraint(Constraint):
 
         if not self._matches_type(value, value_type):
             return False, index
+        if self._is_unfinished_number_prefix(remaining, end, value_type):
+            return True, len(text)
         return True, index + end
 
     def _is_value_prefix(self, text: str, value_type: str) -> bool:
@@ -250,3 +252,16 @@ class ArgumentsConstraint(Constraint):
                 index += 1
 
         return index == len(text)
+
+    def _is_unfinished_number_prefix(
+        self,
+        text: str,
+        decoded_end: int,
+        value_type: str,
+    ) -> bool:
+        """Return True when a decoded number still has numeric suffix text."""
+        return (
+            value_type == "number"
+            and decoded_end < len(text)
+            and self._is_number_prefix(text)
+        )
